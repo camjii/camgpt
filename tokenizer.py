@@ -13,8 +13,8 @@ class Tokenizer():
 
     def _get_pair_counts(self, ids):
         counts = {}
-        for pair in zip(ids, ids[1:]): #zip acts as a pairing mechanism by pairing each element in ids with each element in ids[1:]
-            counts[pair] = counts.get(pair, 0) + 1
+        for pair in zip(ids, ids[1:]): #zip acts as a pairing mechanism by pairing each element in ids with every next element
+            counts[pair] = counts.get(pair, 0) + 1 #adds one to either pair or 0 if not seen
         return counts
 
     def _merge(self, ids, pair, new_id):
