@@ -19,11 +19,6 @@ class Tokenizer():
         return pairs
 
     def merge(self,ids, pair,new_id):
-         #Merge pairs into a single token
-         #1. Identify pairs and new token ids
-         #2. Merge it into a single token id whilst encoding meaning
-         #3. Add new token to vocab
-       
         i = 0
         new_ids = []
         
@@ -65,10 +60,10 @@ class Tokenizer():
         counted_pairs = self.count_pairs(ids)
 
         for i in range(self.num_merges):
-            max_pair = max(counted_pairs,key = counted_pairs.get) #gets the most frequent pair
+            max_pair = max(counted_pairs,key = counted_pairs.get) #gets the most frequent pair by key
             new_id = len(self.vocab) +i
-            merged = self.merge(ids,max_pair,new_id)
-            ids = merged #updating ids to represent merged tokens
+            merged_ids = self.merge(ids,max_pair,new_id)
+            ids = merged_ids #updating ids to represent merged tokens
             counted_pairs = self.count_pairs(ids) #recounting pairs for further merging
 
         return ids
