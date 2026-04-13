@@ -65,7 +65,7 @@ class Tokenizer():
         counted_pairs = self.count_pairs(ids)
 
         for i in range(self.num_merges):
-            max_pair = max(counted_pairs,key = counted_pairs.get) #gets the max
+            max_pair = max(counted_pairs,key = counted_pairs.get) #gets the most frequent pair
             new_id = len(self.vocab) +i
             merged = self.merge(ids,max_pair,new_id)
             ids = merged #updating ids to represent merged tokens
