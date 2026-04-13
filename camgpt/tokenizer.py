@@ -1,10 +1,8 @@
-
-
-
 class Tokenizer():
-    def __init__(self, text, vocab, merged):
+    def __init__(self, text, vocab, num_merges, merged):
         self.text = text
         self.vocab = vocab
+        self.num_merges = num_merges
         self.merged = merged
         pass
 
@@ -33,7 +31,7 @@ class Tokenizer():
             
             if pair == (ids[i], ids[i+1]): #Checking if pair is in ids
                 new_ids.append(new_id)
-                self.merged[new_id] = pair
+                self.merged[new_id] = pair   #Adding the new merge to the dictionary
                 i+=2 #move to next pair 
             else:
                 new_ids.append(ids[i])
@@ -44,13 +42,37 @@ class Tokenizer():
 
         return new_ids
     
-    def train(self, text):
-        ids = self.encode(text)
+
+    def expand(self, id):  #Helper function to recursively deal with tokens that have been merged multiple times
+        if id not in self.merged.keys():
+            return [id]
+        else:
+            pair = self.merged[id] #token is merged 
+        return self.expand(pair[0]) + self.expand(pair[1]) #joining the two lists together to get raw values
+
+
+    def decode(self, ids):
+        decoding= []
+        for id in ids:
+            decoding.extend(self.expand(id))
+
+        return bytes(decoding).decode('utf-8') #turning integers back into strings
+    
+    
+    def train(self):
+        ids = self.encode()
         
         counted_pairs = self.count_pairs(ids)
-        
 
-        #Code the rest out
+        for i in range(self.num_merges):
+            max_pair = max(counted_pairs,key = counted_pairs.get) #gets the max
+            new_id = len(self.vocab) +i
+            merged = self.merge(ids,max_pair,new_id)
+            ids = merged #updating ids to represent merged tokens
+            counted_pairs = self.count_pairs(ids) #recounting pairs for further merging
+
+        return ids
+        
 
                   
     
