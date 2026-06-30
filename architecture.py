@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-import numpy as np 
 import torch.nn.functional as F
 import math
+
 class LayerNorm(nn.Module):
     def __init__(self, d_model, eps: float = 10**-6):
         super().__init__()
@@ -21,7 +21,7 @@ class LayerNorm(nn.Module):
     
 
 class SelfAttention(nn.Module):
-    def __init__(self, d_model, d_k, n_heads, seq_len):
+    def __init__(self, d_model, n_heads, seq_len):
         super().__init__() #calling for nn.module
         self.d_model = d_model
         self.n_heads = n_heads
@@ -29,7 +29,7 @@ class SelfAttention(nn.Module):
         self.d_v = self.d_k
         self.seq_len = seq_len
         self.W_O = nn.Linear(self.d_model, self.d_model)
-        self.q_pros = nn.Linear(d_model, d_model)
+        self.q_pros = nn.Linear(d_model, d_model) #Not initially seperating into h blocks of (d_model, d_k)
         self.k_pros = nn.Linear(d_model, d_model)
         self.v_pros = nn.Linear(d_model, d_model)
         self.register_buffer('mask', torch.tril(torch.ones(seq_len, seq_len)))
@@ -39,19 +39,22 @@ class SelfAttention(nn.Module):
 
 
     def forward(self,X):
-        B,T,C = X.shape
+        batch_size, seq_len, d_model = X.shape #for parallel processing
 
-        Q = self.q_pros(X).view(B,T,self.n_heads, self.d_k).transpose(1,2) #swapping T and n_heads to get n_heads first because last two dims are the actual matrix
-        K= self.k_pros(X).view(B,T,self.n_heads, self.d_k).transpose(1,2)
-        V= self.v_pros(X).view(B,T,self.n_heads, self.d_k).transpose(1,2)
+        Q = self.q_pros(X).view(batch_size, seq_len, self.n_heads, self.d_k).transpose(1,2) #swapping seq_len and n_heads because last two dims (seq_len, d_k) are the actual matrix
+        K= self.k_pros(X).view(batch_size, seq_len, self.n_heads, self.d_k).transpose(1,2) 
+        V= self.v_pros(X).view(batch_size, seq_len, self.n_heads, self.d_k).transpose(1,2)
         
+        
+        
+        #(seq_len x seq_len) 
         scores = Q@K.transpose(-2,-1) / self.d_k **0.5 #Getting the scores
             
-        scores = scores.masked_fill(self.mask[:T, :T] ==0, float('-inf')) #masking future positions in the matrix to -inf
+        scores = scores.masked_fill(self.mask[:seq_len, :seq_len] ==0, float('-inf')) #masking future positions in the matrix to -inf
 
         scores = F.softmax(scores,dim=-1)
        
-        out = (scores @ V).transpose(1, 2).contiguous().view(B, T, C) 
+        out = (scores @ V).transpose(1, 2).contiguous().view(batch_size, seq_len, d_model) 
         return self.W_O(out)
 
 
@@ -59,10 +62,6 @@ class SelfAttention(nn.Module):
         contiguous forces PyTorch to copy data into memory; swap dims -> rearrange memory -> reshape
         """
        
-       
-       
-       
-
 
 class MLP(torch.nn.Module):
     def __init__(self, d_model):
@@ -81,30 +80,7 @@ class MLP(torch.nn.Module):
     
 
 
-class TransformerBlock(nn.Module):
-    def __init__(self, d_model, n_heads):
-        super().__init__()
-        self.d_model = d_model
-        self.n_heads = n_heads
 
-
-    def forward(self, x):
-        ln1 = LayerNorm()
-        ln2 = LayerNorm()
-        attn = SelfAttention()
-        mlp = MLP()
-
-        x = x + attn(ln1(x)) + mlp(ln2(x))
-        return x
-    
-
-class GPT(nn.Module):
-   def __init__(self, vocab_size, d_model):
-       super().__init__()
-       self.vocab_size = vocab_size
-       self.d_model = d_model
-       self.token_emb = nn.Embedding(vocab_size, d_model) 
-       
     
 class PositionalEncoding(nn.Module):
        def __init__(self, d_model, seq_len):
@@ -125,5 +101,50 @@ class PositionalEncoding(nn.Module):
        def forward(self, x):
             return x + self.pe[:, :x.size(1)] #pythonic way of applying positional encoding; applying for each token in input
        
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, n_heads, seq_len):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.seq_len = seq_len
+        self.d_k = d_model // n_heads
+        assert d_model % n_heads ==0, 'd_model must be divisible by n_heads'
+
+        self.ln1 = LayerNorm(d_model)
+        self.attn = SelfAttention(d_model, n_heads, seq_len)
+        self.ln2 = LayerNorm(d_model)
+        self.mlp = MLP(d_model)
 
 
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+
+
+class GPT(nn.Module):
+   def __init__(self, vocab_size, d_model, n_layers: int, seq_len, n_heads):
+       super().__init__()
+       self.vocab_size = vocab_size
+       self.d_model = d_model
+       self.n_layers = n_layers
+       self.seq_len = seq_len
+       self.n_heads = n_heads
+       self.token_emb = nn.Embedding(vocab_size, d_model)
+       self.pos_encoding = PositionalEncoding(d_model, seq_len)
+       self.transformer_blocks = nn.ModuleList([TransformerBlock(d_model, n_heads, seq_len) for _ in range(n_layers)])
+       
+       self.ln3 = LayerNorm(d_model)
+       self.output_proj = nn.Linear(d_model, vocab_size)
+   
+   def forward(self, x):
+       x = self.pos_encoding(self.token_emb(x)) 
+
+       for block in self.transformer_blocks:
+           x = block(x)
+
+       x = self.ln3(x)
+       output = self.output_proj(x)
+       return output
+        
+    

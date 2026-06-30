@@ -36,8 +36,7 @@ class BytePairEncoding():
                 new_ids.append(ids[i])
                 i+=1
         
-        if new_id in new_ids:
-            self.vocab[new_id] = self.vocab[max_pair[0]] + self.vocab[max_pair[1]]
+        
         return new_ids
     
 
@@ -56,7 +55,9 @@ class BytePairEncoding():
                 break
             pairs, max_pair = self.count_pairs(ids)
             self.merges[max_pair] = new_id
+            self.vocab[new_id] = self.vocab[max_pair[0]] + self.vocab[max_pair[1]]
             ids = self.merge_pairs(new_id, max_pair, ids)
+           
 
 
 
